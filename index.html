@@ -239,9 +239,22 @@ const lerp = (a, b, t) => a + (b - a) * t;
 const midiHz = m => 440 * Math.pow(2, (m - 69) / 12);
 const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 const midiName = m => NOTE_NAMES[m % 12] + (Math.floor(m / 12) - 1);
+/* roundRect 兼容 polyfill（老浏览器画曲谱卡用） */
+if (typeof CanvasRenderingContext2D !== "undefined" && !CanvasRenderingContext2D.prototype.roundRect) {
+  CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, r) {
+    const rr = Math.min(typeof r === "number" ? r : 4, w / 2, h / 2);
+    this.moveTo(x + rr, y);
+    this.arcTo(x + w, y, x + w, y + h, rr);
+    this.arcTo(x + w, y + h, x, y + h, rr);
+    this.arcTo(x, y + h, x, y, rr);
+    this.arcTo(x, y, x + w, y, rr);
+    this.closePath();
+    return this;
+  };
+}
+
 /* 简易带种子伪随机（曲名/卡片纹理用） */
-function mulberry32(seed) {
-  return function () {
+function mulberry32(seed) {  return function () {
     seed |= 0; seed = seed + 0x6D2B79F5 | 0;
     let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
     t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
@@ -405,20 +418,22 @@ function playEP(midi, when, dur, vel, dest) {
   vibG.connect(o1.frequency); vibG.connect(o2.frequency);
 
   o1.connect(g); o2.connect(g2).connect(g); g.connect(lp).connect(dest || epBus);
-  const end = t0 + dur + 0.8;
+  /* 停止时刻：等收尾包络（时间常数×7）走完，避免音尾被切 */
+  const tau = Math.min(dur * 0.4, 0.6);
+  const end = t0 + dur * 0.55 + tau * 7;
   o1.start(t0); o2.start(t0); vib.start(t0);
   o1.stop(end); o2.stop(end); vib.stop(end);
-  /* 密集触发自动限幅（保障 d）：统计近期音数，超过即整体压低 */
-  limitDense();
+  /* 密集触发自动限幅（保障 d）：登记触发时刻，由调度循环统一结算 */
+  denseTimes.push(t0);
 }
-/* 简易密集限幅：200ms 内触发越多，总线越压（用于密集点击/琶音） */
+/* 密集限幅：200ms 内触发越多，电钢总线越压；密度回落后自动恢复 */
 let denseTimes = [];
-function limitDense() {
+function updateDenseGain() {
+  if (!AC || !epBus) return;
   const now = AC.currentTime;
-  denseTimes.push(now);
   denseTimes = denseTimes.filter(t => now - t < 0.2);
   const over = clamp(denseTimes.length - 8, 0, 10) / 10;   // 8 音以上开始压
-  if (epBus) epBus.gain.setTargetAtTime(1 - over * 0.45, now, 0.08);
+  epBus.gain.setTargetAtTime(1 - over * 0.45, now, 0.08);
 }
 
 /* ---- 和弦垫：锯齿波 + 低通慢包络，每和弦一次 ---- */
@@ -531,17 +546,18 @@ const INTERVAL = 25;       // setInterval 检查间隔
 const secPerBeat = () => 60 / S.bpm;
 const stepDur = () => 0.25 * secPerBeat();   // 16 分格长
 
-/* 重算整圈网格（BPM 变更 / 启动时调用，保持相位连续） */
+/* 重算整圈网格（BPM 变更 / 启动时调用，保持相位连续）。
+   fromStep 格的时刻保持为 fromTime，其后按新 BPM 排布；
+   cycleRoot 反推为「第 0 格」的时刻，供 nearestStep/stepOffset 换算 */
 function rebuildGrid(fromStep, fromTime) {
   const sd = stepDur();
   const swingOff = (S.swing - 0.5) * 2 * sd;   // 奇格延后量
   for (let i = 0; i < S.totalSteps; i++) {
-    let t = fromTime + i * sd;
+    let t = fromTime + (i - fromStep) * sd;
     if (i % 2 === 1) t += swingOff;
     stepTimes[i] = t;
   }
-  /* 本圈末尾留出下一圈起点（末格 + 一格长） */
-  cycleRoot = fromTime;
+  cycleRoot = fromTime - fromStep * sd;
   stepCursor = fromStep;
 }
 function startScheduler() {
@@ -565,6 +581,7 @@ function scheduleTick() {
     rebuildGrid(0, cycleRoot + loopLen);
     cycleCount++;
   }
+  updateDenseGain();   // 每个调度周期结算密集限幅增益（密度回落自动恢复）
   laneTick();
 }
 
@@ -716,10 +733,11 @@ function handleTap(x, y, w, h, opts) {
     const ch = currentChord();
     const base = 48 + ch.rootMidi % 12;
     const arr = ch.pc.slice(0, 4).map(p => base + ((p - ch.rootMidi % 12) + 120) % 12).sort((a, b) => a - b);
-    arr.forEach((m, i) => addNote(step, m, 0.5 + i * 0.04, 1.5, "smash"));
+    const ids = arr.map(m => addNote(step, m, 0.5, 1.5, "smash", false).id);
     if (AC) arr.forEach((m, i) => playEP(m, t + 0.004 + i * 0.012, 1.5, 0.5, epBus));
     smashVisual(x, y);
-    arr.forEach((m, i) => spawnHold(x, y + (i - 1.5) * 18, step, m));
+    arr.forEach((m, i) => spawnHold(x, y + (i - 1.5) * 18, step, m, ids[i]));
+    saveLocalSoon();
     return;
   }
   const same = S.notes.filter(n => n.step === step && n.kind !== "arp-dust");
@@ -1441,10 +1459,15 @@ const bpmSlider = document.getElementById("bpmSlider");
 bpmSlider.addEventListener("input", () => {
   S.bpm = +bpmSlider.value;
   document.getElementById("bpmVal").textContent = S.bpm;
-  /* 相位连续地重排网格 */
+  /* 相位连续地重排网格：从下一格起按新 BPM，当前格不重复触发 */
   if (AC && schedTimer) {
     const cur = currentPlayingStep();
-    rebuildGrid(cur, Math.max(AC.currentTime, stepTimes[cur]));
+    const sd = stepDur();
+    if (cur >= S.totalSteps - 1) {
+      rebuildGrid(0, cycleRoot + S.totalSteps * sd);       // 正好在圈尾 → 按新一圈起点
+    } else {
+      rebuildGrid(cur + 1, Math.max(AC.currentTime + 0.06, stepTimes[cur] + sd * 0.5));
+    }
   }
   saveLocalSoon();
 });
