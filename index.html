@@ -1,0 +1,1516 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>雨窗 · 午夜琴 | 怎么弹都好听</title>
+<style>
+/* ============================================================
+   雨窗 · 午夜琴 —— 深夜雨窗视觉样式
+   ============================================================ */
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #05070d; }
+body {
+  font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+  color: #cfd8e3; user-select: none; -webkit-user-select: none;
+  touch-action: none; overscroll-behavior: none;
+}
+
+/* ---- 舞台与画布 ---- */
+#stage { position: fixed; inset: 0; }
+#bgCanvas, #fxCanvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+#fxCanvas { z-index: 5; }
+
+/* ---- 开场帷幕（首次交互，解锁音频） ---- */
+#veil {
+  position: fixed; inset: 0; z-index: 100;
+  background: radial-gradient(ellipse at 50% 40%, #101828 0%, #05070d 75%);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  transition: opacity 1.6s ease, visibility 1.6s;
+}
+#veil.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+#veil h1 {
+  font-size: clamp(26px, 6vw, 44px); font-weight: 600; letter-spacing: 0.35em; text-indent: 0.35em;
+  color: #dce6f5; margin-bottom: 10px;
+}
+#veil p { font-size: clamp(12px, 2.6vw, 15px); color: #6d7f9c; margin-bottom: 46px; letter-spacing: 0.2em; }
+#openBtn {
+  position: relative; width: 128px; height: 128px; border-radius: 50%;
+  border: 1px solid rgba(160, 190, 235, 0.45); background: rgba(120, 150, 210, 0.06);
+  color: #c8d6ef; font-size: 17px; letter-spacing: 0.3em; text-indent: 0.3em;
+  cursor: pointer; transition: transform 0.4s ease, box-shadow 0.4s ease;
+  animation: veilGlow 3.2s ease-in-out infinite;
+}
+#openBtn:hover { transform: scale(1.06); box-shadow: 0 0 46px rgba(140, 175, 235, 0.35); }
+@keyframes veilGlow {
+  0%, 100% { box-shadow: 0 0 22px rgba(140, 175, 235, 0.16); }
+  50% { box-shadow: 0 0 55px rgba(140, 175, 235, 0.38); }
+}
+#veilTip { margin-top: 40px; font-size: 12px; color: #4d5b74; letter-spacing: 0.12em; text-align: center; line-height: 2; }
+
+/* ---- 顶部标题 ---- */
+#titleBar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 20;
+  display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+  padding: 14px 20px 0; pointer-events: none;
+  opacity: 0; transition: opacity 1.2s ease 0.6s;
+}
+#titleBar.show { opacity: 1; }
+#titleBar h1 { font-size: 16px; font-weight: 600; letter-spacing: 0.3em; color: #aebdd6; }
+#titleBar .sub { font-size: 11px; color: #566a8a; letter-spacing: 0.1em; }
+
+/* ---- 和弦进度光带 ---- */
+#chordLane {
+  position: fixed; left: 0; right: 0; bottom: 108px; height: 46px; z-index: 15;
+  opacity: 0; transition: opacity 1.2s ease 0.9s; padding: 0 14px; pointer-events: none;
+}
+#chordLane.show { opacity: 1; }
+#laneCells { display: flex; gap: 8px; height: 34px; }
+#laneCells .laneCell { flex: 1; position: relative; height: 100%; }
+.laneCell {
+  border-radius: 9px; overflow: hidden;
+  background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.05);
+  transition: border-color 0.6s ease, box-shadow 0.6s ease;
+}
+.laneCell.active { border-color: rgba(255, 255, 255, 0.28); box-shadow: 0 0 18px rgba(255, 255, 255, 0.08), inset 0 0 18px rgba(255, 255, 255, 0.04); }
+.laneName {
+  position: absolute; top: 50%; transform: translateY(-50%); left: 10px; font-size: 12px; font-weight: 600;
+  letter-spacing: 0.05em; color: #c4d2ea; opacity: 0.4; transition: opacity 0.5s ease;
+  font-variant-numeric: tabular-nums;
+}
+.laneCell.active .laneName { opacity: 1; text-shadow: 0 0 12px rgba(255, 255, 255, 0.5); }
+.laneBeats { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); font-size: 10px; color: #7488a8; font-variant-numeric: tabular-nums; opacity: 0.8; }
+.laneFill {
+  position: absolute; left: 0; bottom: 0; height: 3px; width: 0%;
+  border-radius: 2px; background: linear-gradient(90deg, rgba(200,220,255,0.9), rgba(255,255,255,0.95));
+  box-shadow: 0 0 10px rgba(220, 235, 255, 0.8);
+}
+#laneTip {
+  text-align: center; font-size: 10px; color: #4e5f7c; letter-spacing: 0.22em;
+  margin-top: 7px; height: 12px;
+}
+
+/* ---- 控制条 ---- */
+#controls {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 22;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: center;
+  gap: 8px 10px; padding: 10px 14px 14px;
+  background: linear-gradient(to top, rgba(5, 8, 14, 0.92), rgba(5, 8, 14, 0));
+  opacity: 0; transition: opacity 1.2s ease 1.1s;
+}
+#controls.show { opacity: 1; }
+.btn {
+  border: 1px solid rgba(140, 168, 215, 0.25); border-radius: 8px;
+  background: rgba(120, 150, 205, 0.08); color: #b9c8e2;
+  font-size: 12px; padding: 8px 12px; cursor: pointer; letter-spacing: 0.05em;
+  transition: background 0.25s ease, border-color 0.25s ease, color 0.25s ease;
+  font-family: inherit; line-height: 1;
+}
+.btn:hover { background: rgba(140, 170, 225, 0.18); }
+.btn.on { border-color: rgba(170, 205, 255, 0.6); color: #eaf1ff; background: rgba(150, 185, 245, 0.18); }
+.btn:active { transform: scale(0.96); }
+.ctrl { display: flex; align-items: center; gap: 7px; font-size: 11px; color: #8095b5; }
+.ctrl input[type="range"] {
+  -webkit-appearance: none; appearance: none; width: 86px; height: 3px; border-radius: 2px;
+  background: rgba(150, 175, 220, 0.3); outline: none; cursor: pointer;
+}
+.ctrl input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 13px; height: 13px; border-radius: 50%;
+  background: #cdddf6; box-shadow: 0 0 8px rgba(180, 205, 250, 0.6); cursor: pointer;
+}
+.ctrl .val { min-width: 30px; text-align: right; font-variant-numeric: tabular-nums; color: #a5b7d6; }
+#chipProg { display: flex; gap: 6px; }
+#chipProg .btn { padding: 8px 9px; font-size: 11px; color: #8fa2c0; }
+#chipProg .btn.sel { border-color: rgba(255, 209, 128, 0.65); color: #ffe6b0; background: rgba(255, 200, 110, 0.12); }
+.sep { width: 1px; height: 20px; background: rgba(140, 165, 210, 0.18); }
+@media (max-width: 720px) {
+  .ctrl input[type="range"] { width: 64px; }
+  #chordLane { bottom: 132px; }
+  .btn { padding: 8px 9px; font-size: 11px; }
+  #titleBar .sub { display: none; }
+}
+
+/* ---- 生成曲谱卡弹层 ---- */
+#cardModal {
+  position: fixed; inset: 0; z-index: 200; display: none;
+  align-items: center; justify-content: center; background: rgba(3, 5, 10, 0.78);
+  backdrop-filter: blur(4px); flex-direction: column;
+}
+#cardModal.show { display: flex; }
+#scoreCardWrap { position: relative; }
+#scoreCard { border-radius: 10px; box-shadow: 0 24px 80px rgba(0, 0, 0, 0.7); display: block; max-width: 88vw; max-height: 68vh; }
+#cardClose {
+  position: absolute; top: -14px; right: -14px; width: 34px; height: 34px; border-radius: 50%;
+  border: 1px solid rgba(160, 185, 230, 0.4); background: #0d1420; color: #aebdd6;
+  font-size: 15px; cursor: pointer; line-height: 1;
+}
+#cardHint { text-align: center; color: #7d90b0; font-size: 12px; margin-top: 14px; letter-spacing: 0.1em; }
+#cardHint a { color: #ffd9a0; cursor: pointer; }
+
+/* ---- 录制指示 ---- */
+#recDot {
+  position: fixed; top: 14px; right: 16px; z-index: 30; display: none;
+  align-items: center; gap: 8px; font-size: 11px; color: #ffb3b3; letter-spacing: 0.12em;
+  background: rgba(30, 8, 12, 0.55); border: 1px solid rgba(255, 120, 120, 0.35);
+  padding: 6px 12px; border-radius: 20px; backdrop-filter: blur(3px);
+}
+#recDot.show { display: flex; }
+#recDot i {
+  width: 8px; height: 8px; border-radius: 50%; background: #ff6b7a;
+  animation: recPulse 1s ease-in-out infinite;
+}
+@keyframes recPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+
+/* ---- Toast ---- */
+#toast {
+  position: fixed; left: 50%; bottom: 170px; transform: translateX(-50%) translateY(8px);
+  z-index: 300; background: rgba(14, 20, 32, 0.9); border: 1px solid rgba(150, 180, 230, 0.3);
+  color: #ccd9ee; font-size: 12px; letter-spacing: 0.08em;
+  padding: 9px 18px; border-radius: 8px; opacity: 0; pointer-events: none;
+  transition: opacity 0.35s ease, transform 0.35s ease; max-width: 80vw; text-align: center;
+}
+#toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <canvas id="bgCanvas"></canvas>
+  <canvas id="fxCanvas"></canvas>
+</div>
+
+<div id="veil">
+  <h1>雨 窗</h1>
+  <p>midnight window piano</p>
+  <button id="openBtn">推开这扇窗</button>
+  <div id="veilTip">戴上耳机 · 随手点击玻璃 · 怎么弹都好听<br>单击 / 滑动 / 长按 / 双击 · 点光点可删除音符</div>
+</div>
+
+<div id="titleBar">
+  <h1>雨窗 · 午夜琴</h1>
+  <span class="sub">纵向决定音高 · 横向决定节拍 · 留下的光点会自己循环重放</span>
+</div>
+
+<div id="chordLane">
+  <div id="laneCells"></div>
+  <div id="laneTip"></div>
+</div>
+
+<div id="recDot"><i></i><span>录制中 · 一圈后自动停止下载</span></div>
+
+<div id="controls">
+  <div id="chipProg"></div>
+  <div class="sep"></div>
+  <button class="btn on" id="btnRain">雨声</button>
+  <button class="btn on" id="btnDrums">鼓点</button>
+  <div class="ctrl"><span>BPM</span><input type="range" id="bpmSlider" min="70" max="84" step="1" value="76"><span class="val" id="bpmVal">76</span></div>
+  <div class="ctrl"><span>音量</span><input type="range" id="volSlider" min="0" max="100" step="1" value="80"><span class="val" id="volVal">80</span></div>
+  <div class="sep"></div>
+  <button class="btn" id="btnCard">生成曲谱卡</button>
+  <button class="btn" id="btnRec">录制循环</button>
+  <button class="btn" id="btnClear">清空重来</button>
+</div>
+
+<div id="cardModal">
+  <div id="scoreCardWrap">
+    <canvas id="scoreCard" width="900" height="600"></canvas>
+    <button id="cardClose">✕</button>
+  </div>
+  <div id="cardHint"></div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+"use strict";
+/* ================================================================
+   雨窗 · 午夜琴 —— 单文件 lofi 即兴乐器
+   ------------------------------------------------------------
+   四个「随便点都好听」保障：
+   a) 背景和弦垫固定循环驱动一切和声
+   b) 音高只允许当前和弦的和弦音 + 调内经过音白名单（随播放实时切换）
+   c) 触发时间吸附到带 swing 的 16 分音符网格
+   d) 音色包络柔化 + 密集触发自动限幅
+   ================================================================ */
+
+/* ---------------- 基础工具 ---------------- */
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const midiHz = m => 440 * Math.pow(2, (m - 69) / 12);
+const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+const midiName = m => NOTE_NAMES[m % 12] + (Math.floor(m / 12) - 1);
+/* 简易带种子伪随机（曲名/卡片纹理用） */
+function mulberry32(seed) {
+  return function () {
+    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+    let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+/* ---------------- 曲名生成器（30 基础 + 组合，深夜味） ---------------- */
+const TITLE_A = ["雨停之前", "第 47 次失眠", "凌晨三点半", "窗台上的猫", "末班电车", "融化在周三",
+  "半杯凉掉的茶", "霓虹泡在水里", "慢速心跳", "橘子汽水与冰", "被淋湿的路灯", "翻到一半的书",
+  "旧磁带 B 面", "四月的第一场雨", "午夜便利店", "云隙里的月亮", "没寄出的信", "褪色的车票",
+  "落在掌心的雪", "第八次赖床", "晾不干的星期天", "手心里的星星", "涨潮的街道", "打盹的收音机",
+  "远方朋友的晚安", "三明治与晨雾", "雨刷器的节拍", "慢慢天亮", "空咖啡馆", "温柔的静电"];
+const TITLE_B = ["留声机版", "雨夜混音", "磁带 demo", "慢速版", "无标题", "午夜修订",
+  "窗边草稿", "安眠曲", "再现部", "第二次尝试"];
+
+/* ---------------- 和弦进行库 ---------------- */
+/* 每个进行 4 个和弦 × 每和弦 2 小节（16 拍 = 64 格）
+   pc: 和弦音 pitch class；pass: 调内经过音；rootMidi: 垫音最低音 */
+const PROGRESSIONS = [
+  { name: "经典 Lofi", chords: [
+      { label: "Fmaj7",  pc: [5, 9, 0, 4],  pass: [7, 2],  rootMidi: 41 },
+      { label: "Em7",    pc: [4, 7, 11, 2], pass: [9, 5],  rootMidi: 40 },
+      { label: "Dm7",    pc: [2, 5, 9, 0],  pass: [4, 11], rootMidi: 38 },
+      { label: "Cmaj7",  pc: [0, 4, 7, 11], pass: [2, 5],  rootMidi: 36 }] },
+  { name: "爵士系", chords: [
+      { label: "Am7",    pc: [9, 0, 4, 7],  pass: [2, 5],  rootMidi: 45 },
+      { label: "Dm7",    pc: [2, 5, 9, 0],  pass: [4, 11], rootMidi: 38 },
+      { label: "Gmaj7",  pc: [7, 11, 2, 5], pass: [9, 0],  rootMidi: 43 },
+      { label: "Cmaj7",  pc: [0, 4, 7, 11], pass: [2, 9],  rootMidi: 36 }] },
+  { name: "卡农系", chords: [
+      { label: "Cmaj7",  pc: [0, 4, 7, 11], pass: [2, 5],  rootMidi: 36 },
+      { label: "Am7",    pc: [9, 0, 4, 7],  pass: [2, 5],  rootMidi: 45 },
+      { label: "Fmaj7",  pc: [5, 9, 0, 4],  pass: [7, 2],  rootMidi: 41 },
+      { label: "G",      pc: [7, 11, 2],    pass: [9, 0],  rootMidi: 43 }] },
+  { name: "ii-V 系", chords: [
+      { label: "Dm7",    pc: [2, 5, 9, 0],  pass: [4, 11], rootMidi: 38 },
+      { label: "G7",     pc: [7, 11, 2, 5], pass: [9, 0],  rootMidi: 43 },
+      { label: "Cmaj7",  pc: [0, 4, 7, 11], pass: [2, 5],  rootMidi: 36 },
+      { label: "Cmaj7",  pc: [0, 4, 7, 11], pass: [2, 9],  rootMidi: 36 }] }
+];
+
+/* ---------------- 全局状态 ---------------- */
+const S = {
+  started: false,
+  progIndex: 0,
+  bpm: 76,
+  swing: 0.55,            // swing：奇数 16 分格延后 (swing-0.5)*2*半格时长
+  volume: 0.8,
+  rainOn: true,
+  drumsOn: true,
+  beatsPerChord: 16,      // 每和弦 2 小节 = 16 拍
+  totalBeats: 64,         // 一圈 8 小节
+  stepsPerBeat: 4,        // 16 分音符
+  totalSteps: 256,        // 一圈 256 格
+  notes: [],              // 留驻音符 {id, step, midi, vel, dur, kind}
+  nextId: 1,
+  seed: (Date.now() % 100000) | 0,
+  recName: null
+};
+
+/* ================================================================
+   音频引擎（Web Audio 全程序化合成，无外部资源）
+   ================================================================ */
+let AC = null;
+let master, masterLP, comp, wetGain, delayA, delayB, fbA, fbB;
+let noiseBuf = null, pinkBuf = null;
+let padBus, drumBus, epBus;
+
+/* 黑胶炒豆底噪 buffer（一阶低通白噪，偏棕色） */
+function makeNoise(ctx) {
+  const len = ctx.sampleRate * 2;
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  let last = 0;
+  for (let i = 0; i < len; i++) {
+    const w = Math.random() * 2 - 1;
+    last = (last + 0.02 * w) / 1.02;
+    d[i] = last * 3.2 + w * 0.15;
+  }
+  return buf;
+}
+/* 粉噪声 buffer（雨声基底，Paul Kellet 法） */
+function makePink(ctx) {
+  const len = ctx.sampleRate * 2;
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+  for (let i = 0; i < len; i++) {
+    const w = Math.random() * 2 - 1;
+    b0 = 0.99886 * b0 + w * 0.0555179; b1 = 0.99332 * b1 + w * 0.0750759;
+    b2 = 0.969 * b2 + w * 0.153852;    b3 = 0.8665 * b3 + w * 0.3104856;
+    b4 = 0.55 * b4 + w * 0.5329522;    b5 = -0.7616 * b5 - w * 0.016898;
+    d[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + w * 0.5362) * 0.11;
+    b6 = w * 0.115926;
+  }
+  return buf;
+}
+
+/* 总线结构：各分线 → masterLP(低通闷暖) → comp(压缩) → master(音量) → 输出
+   混响感：两路延迟互反馈 + 低通阻尼（无 IR 文件的延迟反馈网络） */
+function initAudio() {
+  if (AC) return;
+  AC = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: "interactive" });
+  noiseBuf = makeNoise(AC);
+  pinkBuf = makePink(AC);
+
+  master = AC.createGain(); master.gain.value = S.volume;
+  comp = AC.createDynamicsCompressor();
+  comp.threshold.value = -20; comp.knee.value = 22; comp.ratio.value = 5;
+  comp.attack.value = 0.006; comp.release.value = 0.28;
+  masterLP = AC.createBiquadFilter();
+  masterLP.type = "lowpass"; masterLP.frequency.value = 7600; masterLP.Q.value = 0.4;
+
+  wetGain = AC.createGain(); wetGain.gain.value = 0.24;
+  delayA = AC.createDelay(1.2); delayA.delayTime.value = 0.19;
+  delayB = AC.createDelay(1.2); delayB.delayTime.value = 0.31;
+  fbA = AC.createGain(); fbA.gain.value = 0.33;
+  fbB = AC.createGain(); fbB.gain.value = 0.30;
+  const dampA = AC.createBiquadFilter(); dampA.type = "lowpass"; dampA.frequency.value = 2600;
+  const dampB = AC.createBiquadFilter(); dampB.type = "lowpass"; dampB.frequency.value = 2000;
+  delayA.connect(dampA).connect(fbA).connect(delayB);
+  delayB.connect(dampB).connect(fbB).connect(delayA);
+  delayA.connect(wetGain); delayB.connect(wetGain);
+  wetGain.connect(masterLP);
+
+  masterLP.connect(comp).connect(master).connect(AC.destination);
+
+  padBus = AC.createGain();  padBus.gain.value = 1.0;  padBus.connect(masterLP); padBus.connect(delayA);
+  drumBus = AC.createGain(); drumBus.gain.value = 0.9; drumBus.connect(masterLP);
+  epBus = AC.createGain();   epBus.gain.value = 1.0;   epBus.connect(masterLP); epBus.connect(delayA);
+}
+
+/* ---- 电钢音色：正弦 + 三角叠加，快起缓衰，颤音渐入 ---- */
+function playEP(midi, when, dur, vel, dest) {
+  if (!AC) return;
+  const f = midiHz(midi);
+  const t0 = Math.max(when, AC.currentTime + 0.002);
+  const g = AC.createGain();
+  const o1 = AC.createOscillator(); o1.type = "sine";     o1.frequency.value = f;
+  const o2 = AC.createOscillator(); o2.type = "triangle"; o2.frequency.value = f * 2.001;
+  const g2 = AC.createGain(); g2.gain.value = 0.16;
+  o1.detune.value = (Math.random() - 0.5) * 4;   // 轻微失谐 = 温暖
+  o2.detune.value = (Math.random() - 0.5) * 6;
+  const lp = AC.createBiquadFilter(); lp.type = "lowpass";
+  lp.frequency.setValueAtTime(Math.min(f * 3.2, 9000), t0);
+  lp.frequency.exponentialRampToValueAtTime(Math.max(f * 1.4, 320), t0 + dur * 0.6);
+
+  const peak = vel * 0.22;
+  g.gain.setValueAtTime(0, t0);
+  g.gain.linearRampToValueAtTime(peak, t0 + 0.008);          // 快起
+  g.gain.setTargetAtTime(peak * 0.55, t0 + 0.008, 0.28);     // 缓衰
+  g.gain.setTargetAtTime(0, t0 + dur * 0.55, dur * 0.4);     // 自然收尾
+
+  /* 颤音 LFO：长音时缓慢渐入（每音独立，音尾自动断链） */
+  const vib = AC.createOscillator(); vib.frequency.value = 4.6 + Math.random() * 0.5;
+  const vibG = AC.createGain();
+  vibG.gain.setValueAtTime(0, t0);
+  vibG.gain.linearRampToValueAtTime(f * 0.004, t0 + Math.min(1.4, dur));
+  vib.connect(vibG);
+  vibG.connect(o1.frequency); vibG.connect(o2.frequency);
+
+  o1.connect(g); o2.connect(g2).connect(g); g.connect(lp).connect(dest || epBus);
+  const end = t0 + dur + 0.8;
+  o1.start(t0); o2.start(t0); vib.start(t0);
+  o1.stop(end); o2.stop(end); vib.stop(end);
+  /* 密集触发自动限幅（保障 d）：统计近期音数，超过即整体压低 */
+  limitDense();
+}
+/* 简易密集限幅：200ms 内触发越多，总线越压（用于密集点击/琶音） */
+let denseTimes = [];
+function limitDense() {
+  const now = AC.currentTime;
+  denseTimes.push(now);
+  denseTimes = denseTimes.filter(t => now - t < 0.2);
+  const over = clamp(denseTimes.length - 8, 0, 10) / 10;   // 8 音以上开始压
+  if (epBus) epBus.gain.setTargetAtTime(1 - over * 0.45, now, 0.08);
+}
+
+/* ---- 和弦垫：锯齿波 + 低通慢包络，每和弦一次 ---- */
+function playPad(chord, when, dur) {
+  const root = chord.rootMidi;
+  const midis = chord.pc.map(p => root + ((p - root % 12) + 144) % 12);
+  midis.sort((a, b) => a - b);
+  midis.push(root + 24);
+  midis.forEach((m, i) => {
+    const f = midiHz(m);
+    const o = AC.createOscillator(); o.type = "sawtooth";
+    o.frequency.value = f; o.detune.value = (Math.random() - 0.5) * 9;
+    const lp = AC.createBiquadFilter(); lp.type = "lowpass"; lp.Q.value = 0.7;
+    lp.frequency.setValueAtTime(300, when);
+    lp.frequency.linearRampToValueAtTime(720, when + dur * 0.45);
+    lp.frequency.linearRampToValueAtTime(360, when + dur);
+    const g = AC.createGain();
+    const peak = 0.045 - i * 0.006;
+    g.gain.setValueAtTime(0, when);
+    g.gain.linearRampToValueAtTime(peak, when + 0.6);
+    g.gain.setValueAtTime(peak, when + dur * 0.75);
+    g.gain.linearRampToValueAtTime(0.0001, when + dur);
+    o.connect(lp).connect(g).connect(padBus);
+    o.start(when); o.stop(when + dur + 0.1);
+  });
+}
+
+/* ---- 鼓组 ---- */
+function playKick(when) {
+  const o = AC.createOscillator(); o.type = "sine";
+  o.frequency.setValueAtTime(120, when);
+  o.frequency.exponentialRampToValueAtTime(44, when + 0.11);
+  const g = AC.createGain();
+  g.gain.setValueAtTime(0.5, when);
+  g.gain.exponentialRampToValueAtTime(0.001, when + 0.24);
+  o.connect(g).connect(drumBus); o.start(when); o.stop(when + 0.3);
+}
+function playSnare(when) {
+  const src = AC.createBufferSource(); src.buffer = noiseBuf;
+  src.playbackRate.value = 1.4;
+  const bp = AC.createBiquadFilter(); bp.type = "bandpass";
+  bp.frequency.value = 1900; bp.Q.value = 0.9;
+  const g = AC.createGain();
+  g.gain.setValueAtTime(0.15, when);
+  g.gain.exponentialRampToValueAtTime(0.001, when + 0.16);
+  src.connect(bp).connect(g).connect(drumBus);
+  src.start(when, Math.random()); src.stop(when + 0.2);
+}
+function playHat(when, open) {
+  const src = AC.createBufferSource(); src.buffer = noiseBuf;
+  src.playbackRate.value = 2.4;
+  const hp = AC.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 7500;
+  const g = AC.createGain();
+  g.gain.setValueAtTime(open ? 0.04 : 0.026, when);
+  g.gain.exponentialRampToValueAtTime(0.0008, when + (open ? 0.16 : 0.045));
+  src.connect(hp).connect(g).connect(drumBus);
+  src.start(when, Math.random()); src.stop(when + 0.25);
+}
+
+/* ---- 常驻环境层：黑胶炒豆 + 雨声 ---- */
+let vinylSrc = null, vinylGain = null, rainSrc = null, rainGain = null;
+function startAmbience() {
+  if (!vinylSrc) {
+    vinylSrc = AC.createBufferSource(); vinylSrc.buffer = noiseBuf; vinylSrc.loop = true;
+    const bp = AC.createBiquadFilter(); bp.type = "bandpass";
+    bp.frequency.value = 3200; bp.Q.value = 0.35;
+    /* 波形整形：小信号压低、尖峰通过 → 近似炒豆 crackle */
+    const crackle = AC.createWaveShaper();
+    const curve = new Float32Array(1024);
+    for (let i = 0; i < 1024; i++) {
+      const x = i / 512 - 1;
+      curve[i] = Math.abs(x) < 0.82 ? x * 0.12 : Math.sign(x) * (0.82 + (Math.abs(x) - 0.82) * 3.4);
+    }
+    crackle.curve = curve;
+    vinylGain = AC.createGain(); vinylGain.gain.value = 0.013;
+    vinylSrc.connect(bp).connect(crackle).connect(vinylGain).connect(masterLP);
+    vinylSrc.start();
+  }
+  if (!rainSrc) {
+    rainSrc = AC.createBufferSource(); rainSrc.buffer = pinkBuf; rainSrc.loop = true;
+    const lp = AC.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 1050;
+    const hp = AC.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 180;
+    rainGain = AC.createGain();
+    rainSrc.connect(hp).connect(lp).connect(rainGain).connect(masterLP);
+    rainGain.gain.setTargetAtTime(S.rainOn ? 0.1 : 0.0001, AC.currentTime, 0.8);
+    rainSrc.start();
+  }
+}
+function setRain(on) {
+  S.rainOn = on;
+  if (rainGain) rainGain.gain.setTargetAtTime(on ? 0.1 : 0.0001, AC.currentTime, 0.8);
+}
+
+/* ================================================================
+   精确调度器（lookahead，保障 c）
+   ------------------------------------------------------------
+   绝对时间轴：由 stepTimes[] 预生成整圈每格的音频时刻，
+   调度器只管「把未来 100ms 内的格提前排程」。
+   stepCursor 指向下一格；步进时根指针 cycleRoot 前移，
+   循环圈数记在 cycleCount，杜绝时间漂移。
+   ================================================================ */
+let stepTimes = new Float64Array(S.totalSteps);  // 当前圈每格时刻
+let cycleRoot = 0;         // 本圈第 0 格的音频时刻
+let cycleCount = 0;        // 已完成圈数（第 0 圈正在播放）
+let stepCursor = 0;        // 圈内格号 0..255
+let schedTimer = null;
+const LOOKAHEAD = 0.1;     // 提前排程 100ms
+const INTERVAL = 25;       // setInterval 检查间隔
+
+const secPerBeat = () => 60 / S.bpm;
+const stepDur = () => 0.25 * secPerBeat();   // 16 分格长
+
+/* 重算整圈网格（BPM 变更 / 启动时调用，保持相位连续） */
+function rebuildGrid(fromStep, fromTime) {
+  const sd = stepDur();
+  const swingOff = (S.swing - 0.5) * 2 * sd;   // 奇格延后量
+  for (let i = 0; i < S.totalSteps; i++) {
+    let t = fromTime + i * sd;
+    if (i % 2 === 1) t += swingOff;
+    stepTimes[i] = t;
+  }
+  /* 本圈末尾留出下一圈起点（末格 + 一格长） */
+  cycleRoot = fromTime;
+  stepCursor = fromStep;
+}
+function startScheduler() {
+  rebuildGrid(0, AC.currentTime + 0.15);
+  cycleCount = 0;
+  schedTimer = setInterval(scheduleTick, INTERVAL);
+}
+
+/* 每次唤醒：排程 horizon 内所有格 */
+function scheduleTick() {
+  if (!AC) return;
+  const horizon = AC.currentTime + LOOKAHEAD;
+  let guard = 0;
+  while (stepCursor < S.totalSteps && stepTimes[stepCursor] <= horizon && guard++ < 128) {
+    scheduleStep(stepCursor, stepTimes[stepCursor]);
+    stepCursor++;
+  }
+  if (stepCursor >= S.totalSteps) {
+    /* 进位新一圈：从上一圈第 0 格时刻 + 整圈时长继续（防漂移） */
+    const loopLen = S.totalSteps * stepDur();
+    rebuildGrid(0, cycleRoot + loopLen);
+    cycleCount++;
+  }
+  laneTick();
+}
+
+/* 排程一格：垫 / 鼓 / 留驻音符重放 */
+function scheduleStep(step, when) {
+  const stepsPerChord = S.beatsPerChord * S.stepsPerBeat;   // 64 格
+  /* 和弦垫：每和弦头一格触发 */
+  if (step % stepsPerChord === 0) {
+    const ci = step / stepsPerChord;
+    playPad(PROGRESSIONS[S.progIndex].chords[ci], when, stepsPerChord * stepDur() * 0.98);
+    onChordVisual(ci, when);
+  }
+  /* 鼓（lofi 律动，含 swing 网格本身） */
+  if (S.drumsOn) {
+    const b = step % 16;   // 小节内 16 分位
+    if (b === 0 || b === 6 || b === 11) playKick(when);
+    if (b === 4 || b === 12) playSnare(when);
+    if (b % 4 === 0) playHat(when, false);
+    if (b % 4 === 2) playHat(when, b === 14);   // 每小节末一个开镲
+  }
+  /* 留驻音符重放（同格多音 = 叠好的和声；密度限幅保障 d） */
+  const cell = S.notes.filter(n => n.step === step);
+  if (cell.length) {
+    const group = cell.slice(0, 5);
+    const gv = 0.9 / Math.sqrt(group.length);
+    group.forEach(n => { playEP(n.midi, when, n.dur, n.vel * gv, epBus); pulseReplay(n.id); });
+  }
+}
+
+/* 当前正在响的格（供 UI / 白名单 / 光点闪烁用） */
+function currentPlayingStep() {
+  if (!AC) return 0;
+  const t = AC.currentTime;
+  for (let i = stepCursor; i >= 0; i--) {
+    if (stepTimes[i] <= t) return i;
+  }
+  return 0;
+}
+/* 任意音频时刻 → 最近的网格格号（含 swing：奇格时间被推迟，
+   吸附时同时比较偶格与奇格的实际时刻取最近者） */
+function nearestStep(t) {
+  const sd = stepDur();
+  const idx = clamp(Math.round((t - cycleRoot) / sd), 0, S.totalSteps - 1);
+  /* 在 idx-1 / idx / idx+1 里挑实际时刻最近且未过期的格 */
+  let best = idx, bestD = Infinity;
+  for (let k = idx - 2; k <= idx + 2; k++) {
+    const kk = (k + S.totalSteps) % S.totalSteps;
+    const d = Math.abs(stepTimes[kk] - t);
+    if (d < bestD) { bestD = d; best = kk; }
+  }
+  return best;
+}
+/* 某格还差多久才响（负数 = 已过期）。跨圈时按最近未来取 */
+function stepOffset(step) {
+  const sd = stepDur();
+  let t = cycleRoot + step * sd;
+  if (step % 2 === 1) t += (S.swing - 0.5) * 2 * sd;
+  if (t < AC.currentTime - 0.05) t += S.totalSteps * sd;   // 已过 → 下一圈
+  return t - AC.currentTime;
+}
+
+/* ================================================================
+   「怎么点都好听」的音高选择（保障 b）
+   ================================================================ */
+function chordIndexOfStep(step) {
+  return Math.floor(step / (S.beatsPerChord * S.stepsPerBeat)) % 4;
+}
+function currentChord() {
+  return PROGRESSIONS[S.progIndex].chords[chordIndexOfStep(currentPlayingStep())];
+}
+/* 纵向位置 → 白名单最近音（和弦音优先，经过音辅） */
+function pitchForY(yNorm) {
+  const target = lerp(84, 48, clamp(yNorm, 0, 1));   // 顶部高音底部低音
+  const ch = currentChord();
+  let best = 60, bestScore = Infinity;
+  for (let m = 45; m <= 88; m++) {
+    const pc = m % 12;
+    const ci = ch.pc.indexOf(pc);
+    const isPass = ch.pass.indexOf(pc) >= 0;
+    if (ci < 0 && !isPass) continue;
+    const score = Math.abs(m - target) * 2 - (ci >= 0 ? (3 - ci) * 2 : 0) + (isPass && ci < 0 ? 3 : 0);
+    if (score < bestScore) { bestScore = score; best = m; }
+  }
+  return best;
+}
+/* 同格叠音：在已有音之上找最近的未用和弦内音 */
+function stackPitch(existing, yNorm) {
+  const ch = currentChord();
+  const top = existing.length ? Math.max(...existing) : pitchForY(yNorm);
+  const used = new Set(existing);
+  for (let up = 1; up <= 12; up++) {
+    const m = top + up;
+    if (ch.pc.indexOf(m % 12) >= 0 && !used.has(m)) return m;
+  }
+  return top + 12;
+}
+/* 琶音音列：从起点沿和弦音按方向走 */
+function arpeggioLine(startMidi, dir, count) {
+  const ch = currentChord();
+  const pool = [];
+  for (let m = 43; m <= 90; m++) if (ch.pc.indexOf(m % 12) >= 0) pool.push(m);
+  let idx = pool.findIndex(m => m >= startMidi);
+  if (idx < 0) idx = dir > 0 ? pool.length - 1 : 0;
+  const out = [];
+  for (let i = 0; i < count; i++) out.push(pool[clamp(idx + dir * i, 0, pool.length - 1)]);
+  return out;
+}
+
+/* ================================================================
+   交互（pointer events：鼠标 + 多点触控统一处理）
+   ================================================================ */
+const fx = document.getElementById("fxCanvas");
+const fctx = fx.getContext("2d");
+const pointers = new Map();   // pointerId → 手势状态
+
+function canvasPos(e) {
+  const r = fx.getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top, w: r.width, h: r.height };
+}
+
+/* ---- 写入并即时发声（点击延迟 < 20ms，同时落入网格） ---- */
+function addNote(step, midi, vel, dur, kind, playNow) {
+  const n = { id: S.nextId++, step, midi, vel, dur, kind: kind || "tap" };
+  S.notes.push(n);
+  if (playNow && AC) playEP(midi, AC.currentTime + 0.004, dur, vel, epBus);
+  saveLocalSoon();
+  return n;
+}
+/* 即时发声但写入未来格（视觉位置 = 格位置，声音马上响） */
+function addNoteAt(step, midi, vel, dur, kind) {
+  const n = addNote(step, midi, vel, dur, kind, false);
+  if (AC) playEP(midi, AC.currentTime + 0.004, dur, vel, epBus);
+  return n;
+}
+
+/* ---- 单击核心 ---- */
+function handleTap(x, y, w, h, opts) {
+  opts = opts || {};
+  const xN = clamp(x / w, 0, 1), yN = clamp(y / h, 0, 1);
+  const t = AC.currentTime;
+  /* 横向 → 格：把整圈按画布横向展开，直接取对应格（再向最近网格微调） */
+  let step = Math.round(xN * (S.totalSteps - 1));
+  /* 若该格刚刚过去（<80ms），向后借半格提升手感 */
+  const off = stepOffset(step);
+  if (off < -0.08) step = (step + 1) % S.totalSteps;
+
+  if (opts.chordSmash) {
+    /* 双击：当前和弦 4 音纵排一起按 */
+    const ch = currentChord();
+    const base = 48 + ch.rootMidi % 12;
+    const arr = ch.pc.slice(0, 4).map(p => base + ((p - ch.rootMidi % 12) + 120) % 12).sort((a, b) => a - b);
+    arr.forEach((m, i) => addNote(step, m, 0.5 + i * 0.04, 1.5, "smash"));
+    if (AC) arr.forEach((m, i) => playEP(m, t + 0.004 + i * 0.012, 1.5, 0.5, epBus));
+    smashVisual(x, y);
+    arr.forEach((m, i) => spawnHold(x, y + (i - 1.5) * 18, step, m));
+    return;
+  }
+  const same = S.notes.filter(n => n.step === step && n.kind !== "arp-dust");
+  let midi, kind = "tap";
+  if (same.length > 0 && !opts.noStack) {
+    midi = stackPitch(same.map(n => n.midi), yN);   // 同格重复 = 向上叠和声
+    kind = "stack";
+  } else {
+    midi = pitchForY(yN);
+  }
+  const n = addNote(step, midi, 0.62, 1.1, kind, true);
+  ripple(x, y, midi);
+  spawnHold(x, y, step, midi, n.id);
+}
+
+/* ---- 滑动琶音颗粒（跟随滑动方向上/下行） ---- */
+function arpeggioDust(x, y, dir, w, h) {
+  const yN = clamp(y / h, 0, 1);
+  const t = AC.currentTime;
+  const startMidi = pitchForY(yN);
+  /* 方向步进音：沿和弦音池向上或向下找下一个 */
+  const ch = currentChord();
+  const pool = [];
+  for (let m = 43; m <= 90; m++) if (ch.pc.indexOf(m % 12) >= 0) pool.push(m);
+  const idx = pool.findIndex(m => m >= startMidi);
+  const next = pool[clamp(idx + dir, 0, pool.length - 1)] || startMidi;
+  playEP(next, t + 0.004, 0.7, 0.5, epBus);
+  const step = nearestStep(t + 0.004);
+  if (Math.random() < 0.34) {   // 部分留驻：滑动织入但不淹没
+    const n = addNote(step, next, 0.42, 0.8, "arp-dust", false);
+    spawnHold(x, y, step, next, n.id);
+  }
+  ripple(x, y, next, 0.7);
+}
+/* 快速连点（>3 次/秒的同向动作）：补一串三连水珠琶音 */
+let rapidTaps = [];
+function burstArpeggio(x, y, dir, w, h) {
+  const yN = clamp(y / h, 0, 1);
+  const startMidi = pitchForY(yN);
+  const line = arpeggioLine(startMidi, dir, 3);
+  const sd = stepDur();
+  const t0 = AC.currentTime + 0.004;
+  line.forEach((m, i) => {
+    playEP(m, t0 + i * sd * 0.5, 0.85 - i * 0.08, 0.52 - i * 0.05, epBus);
+    ripple(x + dir * (i + 1) * 16, y - i * 14, m, 0.65);
+  });
+  /* 只把首音留驻（琶音段落感，避免堆爆） */
+  const step = nearestStep(t0);
+  const n = addNote(step, line[0], 0.5, 0.9, "arp", false);
+  spawnHold(x, y, step, line[0], n.id);
+}
+
+/* ---- 长按：延音 + 颤音渐入（playEP 内建），松手自然收尾 ---- */
+function beginHold(pid, x, y, w, h) {
+  const yN = clamp(y / h, 0, 1);
+  const midi = pitchForY(yN);
+  const t = AC.currentTime;
+  playEP(midi, t + 0.004, 3.6, 0.58, epBus);   // 长音：颤音 1.4s 渐入
+  const step = nearestStep(t);
+  const n = addNote(step, midi, 0.58, 3.4, "hold", false);
+  ripple(x, y, midi, 1.3);
+  spawnHold(x, y, step, midi, n.id);
+  holdPulse(pid, x, y, midi);
+}
+/* 长按期间的呼吸光环 */
+function holdPulse(pid, x, y, midi) {
+  const iv = setInterval(() => {
+    if (!pointers.has(pid)) { clearInterval(iv); return; }
+    ripples.push({ x, y, r: 6, maxR: 44 + (midi - 48) * 0.7, a: 0.28, scale: 1 });
+  }, 420);
+}
+
+/* ---- 点击光点删除留驻音符 ---- */
+function tryDeleteHold(x, y) {
+  for (let i = holds.length - 1; i >= 0; i--) {
+    const hd = holds[i];
+    if (!hd.noteId) continue;
+    const dx = x - hd.x, dy = y - hd.y;
+    if (dx * dx + dy * dy < 18 * 18) {
+      S.notes = S.notes.filter(n => n.id !== hd.noteId);
+      holds.splice(i, 1);
+      popVisual(hd.x, hd.y);
+      saveLocalSoon();
+      return true;
+    }
+  }
+  return false;
+}
+
+/* ---- 指针事件（双击 / 长按 / 滑动 / 单击判定） ---- */
+let lastTapTime = 0, lastTapX = 0, lastTapY = 0;
+const DBL_MS = 300, HOLD_MS = 330, MOVE_TH = 8, SLIDE_SP = 60;
+
+fx.style.touchAction = "none";
+fx.addEventListener("pointerdown", e => {
+  if (!S.started) return;
+  e.preventDefault();
+  fx.setPointerCapture(e.pointerId);
+  const p = canvasPos(e);
+  if (tryDeleteHold(p.x, p.y)) return;
+
+  const now = performance.now();
+  const st = {
+    x: p.x, y: p.y, downX: p.x, downY: p.y, t0: now,
+    moved: false, done: false, holdTimer: null,
+    lastEmit: 0, dir: 0, travel: 0
+  };
+  pointers.set(e.pointerId, st);
+
+  /* 双击检测：300ms 内同点两次 */
+  if (now - lastTapTime < DBL_MS && Math.hypot(p.x - lastTapX, p.y - lastTapY) < 48) {
+    st.done = true;
+    handleTap(p.x, p.y, p.w, p.h, { chordSmash: true });
+    lastTapTime = 0;
+    return;
+  }
+  lastTapTime = now; lastTapX = p.x; lastTapY = p.y;
+
+  /* 长按判定：330ms 未移动未抬起 */
+  st.holdTimer = setTimeout(() => {
+    if (pointers.has(e.pointerId) && !st.moved && !st.done) {
+      st.done = true;
+      beginHold(e.pointerId, st.downX, st.downY, p.w, p.h);
+    }
+  }, HOLD_MS);
+});
+
+fx.addEventListener("pointermove", e => {
+  const st = pointers.get(e.pointerId);
+  if (!st || !S.started) return;
+  e.preventDefault();
+  const p = canvasPos(e);
+  const dx = p.x - st.x, dy = p.y - st.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist > MOVE_TH && !st.moved) {
+    st.moved = true;
+    clearTimeout(st.holdTimer);
+  }
+  if (st.moved) {
+    st.travel += dist;
+    if (dx !== 0) st.dir = dx > 0 ? 1 : -1;
+    trailPoints.push({ x: p.x, y: p.y, t: performance.now() });
+    /* 滑动琶音：每 60ms 最多一颗，跟随方向 */
+    const now = performance.now();
+    if (now - st.lastEmit > SLIDE_SP) {
+      st.lastEmit = now;
+      arpeggioDust(p.x, p.y, st.dir, p.w, p.h);
+      /* 快速大幅滑动 → 途中补一发三连水珠 */
+      if (st.travel > 240 && now - (st.lastBurst || 0) > 500) {
+        st.lastBurst = now; st.travel = 0;
+        burstArpeggio(p.x, p.y, st.dir, p.w, p.h);
+      }
+    }
+  }
+  st.x = p.x; st.y = p.y;
+});
+
+function endPointer(e) {
+  const st = pointers.get(e.pointerId);
+  pointers.delete(e.pointerId);
+  if (!st) return;
+  clearTimeout(st.holdTimer);
+  if (st.done || st.moved) return;
+  /* 普通单击 */
+  handleTap(st.downX, st.downY, fx.clientWidth, fx.clientHeight, {});
+}
+fx.addEventListener("pointerup", endPointer);
+fx.addEventListener("pointercancel", endPointer);
+
+/* 桌面小彩蛋：空格 = 砸当前和弦 */
+window.addEventListener("keydown", e => {
+  if (!S.started) return;
+  if (e.code === "Space") {
+    e.preventDefault();
+    handleTap(fx.clientWidth / 2, fx.clientHeight / 2, fx.clientWidth, fx.clientHeight, { chordSmash: true });
+  }
+});
+
+/* ================================================================
+   视觉层
+   ================================================================ */
+const bg = document.getElementById("bgCanvas");
+const bctx = bg.getContext("2d");
+let W = 0, H = 0, DPR = 1;
+
+function resize() {
+  DPR = Math.min(2, window.devicePixelRatio || 1);
+  W = window.innerWidth; H = window.innerHeight;
+  [bg, fx].forEach(c => {
+    c.width = Math.round(W * DPR); c.height = Math.round(H * DPR);
+    c.style.width = W + "px"; c.style.height = H + "px";
+  });
+  bctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  fctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  layoutHolds();
+  buildLanes();
+}
+window.addEventListener("resize", () => { resize(); makeDrops(); makeBlobs(); });
+
+/* ---- 玻璃雨滴 ---- */
+let drops = [];
+function newDrop(top) {
+  return {
+    x: Math.random() * W,
+    y: top ? -20 : Math.random() * H,
+    r: 1.2 + Math.random() * 2.6,
+    v: 14 + Math.random() * 26,
+    wob: Math.random() * Math.PI * 2,
+    trailLen: 6 + Math.random() * 14
+  };
+}
+function makeDrops() {
+  drops = [];
+  const n = S.rainOn ? 110 : 46;   // 雨声开 → 雨滴更密
+  for (let i = 0; i < n; i++) drops.push(newDrop(false));
+}
+
+/* ---- 霓虹光斑（和弦切换渐变颜色） ---- */
+let blobs = [];
+const PALETTE = ["255,120,90", "120,160,255", "255,190,120", "140,255,200", "200,130,255"];
+function makeBlobs() {
+  blobs = [];
+  for (let i = 0; i < 5; i++) {
+    blobs.push({
+      x: (0.1 + 0.2 * i + Math.random() * 0.06) * W,
+      y: H * (0.5 + Math.random() * 0.34),
+      r: 90 + Math.random() * 130,
+      rgb: PALETTE[i % PALETTE.length],
+      targetRgb: PALETTE[i % PALETTE.length],
+      drift: Math.random() * Math.PI * 2
+    });
+  }
+}
+function setBlobPalette(ci) {
+  const rnd = mulberry32(S.seed + ci * 77 + 13);
+  blobs.forEach(b => { b.targetRgb = PALETTE[Math.floor(rnd() * PALETTE.length)]; });
+}
+
+/* ---- FX 元素 ---- */
+let ripples = [], holds = [], pops = [], sparks = [], trailPoints = [];
+function ripple(x, y, midi, scale) {
+  ripples.push({ x, y, r: 4, maxR: 30 + (midi - 48) * 0.85, a: 0.5, scale: scale || 1 });
+  if (ripples.length > 80) ripples.shift();
+}
+function spawnHold(x, y, step, midi, noteId) {
+  holds.push({ x, y, step, midi, noteId: noteId || 0, ph: Math.random() * 6.28, flash: 0 });
+}
+/* 留驻光点按 step/音高重新布局（resize / 载入存档用） */
+function layoutHolds() {
+  const x0 = W * 0.06, x1 = W * 0.94, y0 = H * 0.12, y1 = H * 0.66;
+  holds.forEach(hd => {
+    hd.x = x0 + (hd.step / S.totalSteps) * (x1 - x0);
+    hd.y = y0 + (1 - clamp((hd.midi - 48) / 36, 0, 1)) * (y1 - y0);
+  });
+}
+function pulseReplay(id) {
+  const hd = holds.find(h => h.noteId === id);
+  if (hd) hd.flash = 1;
+}
+function popVisual(x, y) { pops.push({ x, y, r: 6, a: 0.9 }); }
+function smashVisual(x, y) {
+  for (let i = 0; i < 5; i++) ripples.push({ x, y, r: 4 + i * 6, maxR: 56 + i * 18, a: 0.55, scale: 1.4 });
+  sparks.push({ x, y, v: 44, a: 1 });
+}
+
+/* ---- 背景：夜色 + 光斑 + 雨滴 + 暗角 ---- */
+function drawBG() {
+  const g = bctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, "#070b14");
+  g.addColorStop(0.55, "#0a1020");
+  g.addColorStop(1, "#05070d");
+  bctx.fillStyle = g;
+  bctx.fillRect(0, 0, W, H);
+
+  blobs.forEach(b => {
+    b.drift += 0.0016;
+    const bx = b.x + Math.sin(b.drift) * 26;
+    const by = b.y + Math.cos(b.drift * 0.7) * 14;
+    if (b.rgb !== b.targetRgb) {   // 和弦切换 → 颜色缓变
+      const cur = b.rgb.split(",").map(Number);
+      const tgt = b.targetRgb.split(",").map(Number);
+      b.rgb = cur.map((v, i) => Math.round(lerp(v, tgt[i], 0.02))).join(",");
+    }
+    for (let k = 3; k >= 0; k--) {
+      bctx.beginPath();
+      bctx.arc(bx, by, b.r * (1 + k * 0.55), 0, 6.2832);
+      bctx.fillStyle = `rgba(${b.rgb},${0.05 - k * 0.009})`;
+      bctx.fill();
+    }
+  });
+
+  drops.forEach(d => {
+    d.wob += 0.01;
+    d.y += d.v * 0.016;
+    d.x += Math.sin(d.wob) * 0.08;
+    if (d.y > H + 24) Object.assign(d, newDrop(true));
+    const grd = bctx.createLinearGradient(d.x, d.y - d.trailLen, d.x, d.y);
+    grd.addColorStop(0, "rgba(180,205,255,0)");
+    grd.addColorStop(1, "rgba(190,215,255,0.28)");
+    bctx.strokeStyle = grd;
+    bctx.lineWidth = d.r * 0.8;
+    bctx.beginPath();
+    bctx.moveTo(d.x, d.y - d.trailLen);
+    bctx.lineTo(d.x, d.y);
+    bctx.stroke();
+    bctx.beginPath();
+    bctx.arc(d.x, d.y, d.r, 0, 6.2832);
+    bctx.fillStyle = "rgba(200,222,255,0.34)";
+    bctx.fill();
+    bctx.beginPath();
+    bctx.arc(d.x - d.r * 0.3, d.y - d.r * 0.3, d.r * 0.32, 0, 6.2832);
+    bctx.fillStyle = "rgba(255,255,255,0.5)";
+    bctx.fill();
+  });
+
+  const vg = bctx.createRadialGradient(W / 2, H * 0.42, Math.min(W, H) * 0.3, W / 2, H / 2, Math.max(W, H) * 0.85);
+  vg.addColorStop(0, "rgba(0,0,0,0)");
+  vg.addColorStop(1, "rgba(2,4,9,0.7)");
+  bctx.fillStyle = vg;
+  bctx.fillRect(0, 0, W, H);
+}
+
+/* ---- FX：轨迹 / 涟漪 / 留驻光点 / 删除爆点 / 火花 ---- */
+function drawFX() {
+  fctx.clearRect(0, 0, W, H);
+  const now = performance.now();
+
+  trailPoints = trailPoints.filter(p => now - p.t < 420);
+  fctx.lineCap = "round";
+  for (let i = 1; i < trailPoints.length; i++) {
+    const p0 = trailPoints[i - 1], p1 = trailPoints[i];
+    const a = 1 - (now - p1.t) / 420;
+    fctx.strokeStyle = `rgba(170,200,255,${a * 0.35})`;
+    fctx.lineWidth = 2.4 * a + 0.4;
+    fctx.beginPath();
+    fctx.moveTo(p0.x, p0.y); fctx.lineTo(p1.x, p1.y);
+    fctx.stroke();
+  }
+
+  ripples = ripples.filter(r => r.a > 0.02);
+  ripples.forEach(r => {
+    r.r += (r.maxR - r.r) * 0.08 + 0.5;
+    r.a *= 0.94;
+    fctx.beginPath();
+    fctx.arc(r.x, r.y, r.r, 0, 6.2832);
+    fctx.strokeStyle = `rgba(190,215,255,${r.a})`;
+    fctx.lineWidth = 1.6;
+    fctx.stroke();
+    fctx.beginPath();
+    fctx.arc(r.x, r.y, r.r * 0.6, 0, 6.2832);
+    fctx.strokeStyle = `rgba(220,235,255,${r.a * 0.4})`;
+    fctx.stroke();
+  });
+
+  /* 留驻光点：呼吸 + 播放指针接近时增亮 + 重放闪亮 */
+  const curStep = currentPlayingStep();
+  holds.forEach(hd => {
+    hd.ph += 0.02;
+    hd.flash *= 0.92;
+    const distSteps = Math.abs(((hd.step - curStep + S.totalSteps) % S.totalSteps));
+    const near = 1 - Math.min(1, distSteps / 26);
+    const rr = 2.6 + Math.sin(hd.ph) * 0.7 + hd.flash * 3.4 + near * 1.2;
+    const a = clamp(0.34 + near * 0.4 + hd.flash * 0.5, 0, 1);
+    fctx.beginPath();
+    fctx.arc(hd.x, hd.y, rr, 0, 6.2832);
+    fctx.fillStyle = `rgba(215,230,255,${a})`;
+    fctx.fill();
+    fctx.beginPath();
+    fctx.arc(hd.x, hd.y, rr * 3.2, 0, 6.2832);
+    fctx.fillStyle = `rgba(160,195,255,${a * 0.1})`;
+    fctx.fill();
+  });
+
+  pops = pops.filter(p => p.a > 0.03);
+  pops.forEach(p => {
+    p.r += 1.6; p.a *= 0.9;
+    fctx.beginPath();
+    fctx.arc(p.x, p.y, p.r, 0, 6.2832);
+    fctx.strokeStyle = `rgba(255,190,190,${p.a})`;
+    fctx.stroke();
+  });
+
+  sparks = sparks.filter(s => s.a > 0.03);
+  sparks.forEach(s => {
+    s.v *= 0.94; s.a *= 0.93;
+    fctx.beginPath();
+    fctx.arc(s.x, s.y - s.v * 0.1, 2, 0, 6.2832);
+    fctx.fillStyle = `rgba(255,225,180,${s.a})`;
+    fctx.fill();
+  });
+}
+
+/* ---- 主渲染循环 ---- */
+function frame() {
+  drawBG();
+  drawFX();
+  requestAnimationFrame(frame);
+}
+
+/* ================================================================
+   和弦进度光带 UI
+   ================================================================ */
+const laneCellsEl = document.getElementById("laneCells");
+const laneTip = document.getElementById("laneTip");
+let laneEls = [];
+let uiChordIndex = -1;
+
+function buildLanes() {
+  if (!laneCellsEl) return;
+  laneCellsEl.innerHTML = "";
+  laneEls = [];
+  PROGRESSIONS[S.progIndex].chords.forEach(c => {
+    const cell = document.createElement("div");
+    cell.className = "laneCell";
+    cell.innerHTML = `<span class="laneName">${c.label}</span><span class="laneBeats"></span><div class="laneFill"></div>`;
+    laneCellsEl.appendChild(cell);
+    laneEls.push({
+      root: cell,
+      beats: cell.querySelector(".laneBeats"),
+      fill: cell.querySelector(".laneFill")
+    });
+  });
+  uiChordIndex = -1;
+}
+/* 和弦切换的 UI/光斑变色，等到真正发声的时刻（调度提前 ≤100ms） */
+function onChordVisual(ci, when) {
+  const delay = Math.max(0, (when - AC.currentTime) * 1000);
+  setTimeout(() => {
+    laneEls.forEach((el, i) => el.root.classList.toggle("active", i === ci));
+    uiChordIndex = ci;
+    setBlobPalette(ci);
+  }, delay);
+}
+function laneTick() {
+  if (!AC || uiChordIndex < 0) return;
+  const stepsPerChord = S.beatsPerChord * S.stepsPerBeat;
+  const cur = currentPlayingStep();
+  const ci = chordIndexOfStep(cur);
+  const inChord = cur % stepsPerChord;
+  const el = laneEls[ci];
+  if (el) {
+    el.fill.style.width = (inChord / stepsPerChord * 100).toFixed(1) + "%";
+    el.beats.textContent = Math.ceil((stepsPerChord - inChord) / 4) + " 拍";
+  }
+  laneTip.textContent = "♪ " + PROGRESSIONS[S.progIndex].name + " · 第 " + (ci + 1) + "/4 块和弦 · "
+    + S.notes.length + " 颗留驻音符 · 第 " + (cycleCount + 1) + " 圈";
+}
+
+/* ================================================================
+   留存（localStorage 自动保存）
+   ================================================================ */
+const LS_KEY = "rainwindow.midnight.v1";
+function saveLocal() {
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify({
+      v: 1,
+      notes: S.notes.map(n => ({ step: n.step, midi: n.midi, vel: n.vel, dur: n.dur, kind: n.kind })),
+      progIndex: S.progIndex, bpm: S.bpm, volume: S.volume,
+      rainOn: S.rainOn, drumsOn: S.drumsOn, seed: S.seed,
+      title: S.recName, nextId: S.nextId
+    }));
+  } catch (e) { /* 隐私模式等存储失败时静默 */ }
+}
+let saveTimer = null;
+function saveLocalSoon() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveLocal, 400);
+}
+function loadLocal() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return false;
+    const d = JSON.parse(raw);
+    if (!d || d.v !== 1) return false;
+    S.notes = (d.notes || []).map((n, i) => ({
+      id: i + 1,
+      step: clamp(n.step | 0, 0, S.totalSteps - 1),
+      midi: clamp(n.midi | 0, 21, 108),
+      vel: +n.vel || 0.6, dur: +n.dur || 1, kind: n.kind || "tap"
+    }));
+    S.nextId = S.notes.length + 1;
+    S.progIndex = clamp(d.progIndex | 0, 0, PROGRESSIONS.length - 1);
+    S.bpm = clamp(+d.bpm || 76, 70, 84);
+    S.volume = clamp(isFinite(+d.volume) && d.volume > 0 ? +d.volume : 0.8, 0, 1);
+    S.rainOn = d.rainOn !== false;
+    S.drumsOn = d.drumsOn !== false;
+    S.seed = (d.seed | 0) || (Date.now() % 100000) | 0;
+    S.recName = d.title || null;
+    return true;
+  } catch (e) { return false; }
+}
+
+/* ================================================================
+   曲谱卡（卡带样式 canvas 图片 + 自动曲名）
+   ================================================================ */
+function generateTitle(force) {
+  if (S.recName && !force) return S.recName;
+  const used = [];
+  try {
+    const raw = localStorage.getItem(LS_KEY + ".titles");
+    if (raw) used.push(...JSON.parse(raw));
+  } catch (e) { }
+  let name = "", guard = 0;
+  do {
+    const a = TITLE_A[Math.floor(Math.random() * TITLE_A.length)];
+    const b = TITLE_B[Math.floor(Math.random() * TITLE_B.length)];
+    name = Math.random() < 0.7 ? a : a + " · " + b;
+    guard++;
+  } while (used.slice(-24).indexOf(name) >= 0 && guard < 40);
+  used.push(name);
+  try { localStorage.setItem(LS_KEY + ".titles", JSON.stringify(used.slice(-60))); } catch (e) { }
+  S.recName = name;
+  saveLocal();
+  return name;
+}
+
+function drawScoreCard() {
+  const cv = document.getElementById("scoreCard");
+  const ctx = cv.getContext("2d");
+  const CW = 900, CH = 600;
+  ctx.clearRect(0, 0, CW, CH);
+
+  const title = generateTitle(false) || "雨停之前";
+  const prog = PROGRESSIONS[S.progIndex];
+
+  const bg1 = ctx.createLinearGradient(0, 0, CW, CH);
+  bg1.addColorStop(0, "#141b2b"); bg1.addColorStop(0.5, "#0d1322"); bg1.addColorStop(1, "#1a1424");
+  ctx.fillStyle = bg1;
+  ctx.beginPath(); ctx.roundRect(0, 0, CW, CH, 18); ctx.fill();
+
+  /* 磁带壳纹理噪点 */
+  const rnd = mulberry32(S.seed);
+  ctx.fillStyle = "rgba(255,255,255,0.02)";
+  for (let i = 0; i < 900; i++) ctx.fillRect(rnd() * CW, rnd() * CH, 1, 1);
+
+  /* 手写标签纸 */
+  ctx.fillStyle = "#e8e2d4";
+  ctx.beginPath(); ctx.roundRect(28, 26, CW - 56, 118, 8); ctx.fill();
+  ctx.fillStyle = "#2a2620";
+  ctx.font = "600 15px sans-serif";
+  ctx.fillText("RAIN WINDOW · 午夜琴 — MIXTAPE", 48, 54);
+  ctx.font = "700 34px sans-serif";
+  ctx.fillText("「 " + title + " 」", 48, 96);
+  ctx.strokeStyle = "rgba(42,38,32,0.14)"; ctx.lineWidth = 1;
+  for (let i = 0; i < 3; i++) {
+    ctx.beginPath(); ctx.moveTo(48, 106 + i * 12); ctx.lineTo(CW - 48, 106 + i * 12); ctx.stroke();
+  }
+
+  /* 卡带轮与带芯 */
+  const wheel = (x, y, r, rot) => {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
+    ctx.strokeStyle = "#39445c"; ctx.lineWidth = 10;
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, 6.2832); ctx.stroke();
+    ctx.strokeStyle = "#55648a"; ctx.lineWidth = 3;
+    for (let k = 0; k < 6; k++) {
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(k * 1.047) * r * 0.25, Math.sin(k * 1.047) * r * 0.25);
+      ctx.lineTo(Math.cos(k * 1.047) * r * 0.92, Math.sin(k * 1.047) * r * 0.92);
+      ctx.stroke();
+    }
+    ctx.fillStyle = "#0a0f1a";
+    ctx.beginPath(); ctx.arc(0, 0, r * 0.3, 0, 6.2832); ctx.fill();
+    ctx.restore();
+  };
+  const rotA = (Date.now() / 1400) % 6.2832;
+  ctx.fillStyle = "#2b3040";
+  ctx.beginPath(); ctx.roundRect(180, 236, 540, 128, 60); ctx.fill();
+  const dens = clamp(S.notes.length / 96, 0.06, 1);
+  ctx.fillStyle = "#3a4157";
+  ctx.beginPath(); ctx.arc(240, 300, 26 + dens * 22, 0, 6.2832); ctx.fill();
+  ctx.beginPath(); ctx.arc(660, 300, 26 + dens * 22, 0, 6.2832); ctx.fill();
+  ctx.fillStyle = "#101625";
+  ctx.beginPath(); ctx.roundRect(320, 270, 260, 60, 8); ctx.fill();
+  wheel(240, 300, 62, rotA);
+  wheel(660, 300, 62, -rotA * 0.8);
+
+  /* 和弦进行 */
+  ctx.font = "600 19px sans-serif";
+  ctx.fillStyle = "#aebbd6";
+  ctx.textAlign = "center";
+  ctx.fillText(prog.chords.map(c => c.label).join("  →  ") + "   ( " + prog.name + " )", CW / 2, 418);
+  ctx.textAlign = "left";
+
+  /* 统计 */
+  const cells = new Set(S.notes.map(n => n.step)).size;
+  const avgVel = S.notes.length ? S.notes.reduce((s, n) => s + n.vel, 0) / S.notes.length * 100 | 0 : 0;
+  ctx.font = "13px sans-serif";
+  ctx.fillStyle = "#77879f";
+  ctx.fillText("BPM " + S.bpm + "  ·  SWING 55%  ·  留驻音符 " + S.notes.length
+    + "  ·  覆盖 " + cells + "/" + S.totalSteps + " 格  ·  平均力度 " + avgVel + "%", 96, 452);
+
+  /* 迷你时间线密度图 */
+  const gx = 60, gy = 480, gw = CW - 120, gh = 44;
+  ctx.strokeStyle = "rgba(140,165,210,0.25)"; ctx.lineWidth = 1;
+  for (let i = 0; i <= 64; i += 8) {
+    const x = gx + i / 64 * gw;
+    ctx.beginPath(); ctx.moveTo(x, gy); ctx.lineTo(x, gy + gh); ctx.stroke();
+  }
+  const per = S.totalSteps / 64;
+  const cellMap = new Array(64).fill(0);
+  S.notes.forEach(n => cellMap[Math.min(63, Math.floor(n.step / per))]++);
+  const mx = Math.max(1, ...cellMap);
+  cellMap.forEach((v, i) => {
+    if (!v) return;
+    const h = v / mx * gh;
+    ctx.fillStyle = "rgba(150,185,245,0.75)";
+    ctx.fillRect(gx + i / 64 * gw + 1, gy + gh - h, gw / 64 - 2, h);
+  });
+  ctx.strokeStyle = "rgba(140,165,210,0.4)";
+  ctx.strokeRect(gx, gy, gw, gh);
+  ctx.fillStyle = "#5d6c86"; ctx.font = "11px sans-serif";
+  ctx.fillText("LOOP TIMELINE · 音符密度", gx, gy - 6);
+
+  ctx.fillStyle = "#4c5a72"; ctx.font = "12px sans-serif";
+  ctx.fillText("SIDE A · LOFI IMPROV · 录制于雨窗 " + new Date().toLocaleString("zh-CN", { hour12: false }), 48, 566);
+  ctx.textAlign = "right";
+  ctx.fillText("怎么弹都好听 · 雨窗午夜琴", CW - 48, 566);
+  ctx.textAlign = "left";
+  return title;
+}
+
+/* ---- 曲谱卡弹层 ---- */
+const cardModal = document.getElementById("cardModal");
+const cardHint = document.getElementById("cardHint");
+function openCard() {
+  const title = drawScoreCard();
+  const url = document.getElementById("scoreCard").toDataURL("image/png");
+  cardModal.classList.add("show");
+  cardHint.innerHTML = "「 " + title + " 」 · 长按或右键图片可保存 · ";
+  const dl = document.createElement("a");
+  dl.textContent = "点此下载"; dl.href = url; dl.download = title + ".png";
+  dl.style.color = "#ffd9a0"; dl.style.cursor = "pointer";
+  cardHint.appendChild(dl);
+  const sp = document.createTextNode(" · ");
+  cardHint.appendChild(sp);
+  const re = document.createElement("a");
+  re.textContent = "换一个曲名"; re.style.color = "#a0c8ff"; re.style.cursor = "pointer";
+  re.onclick = e => { e.preventDefault(); generateTitle(true); openCard(); toast("换名成功 → " + S.recName); };
+  cardHint.appendChild(re);
+}
+document.getElementById("btnCard").addEventListener("click", () => { if (S.started) openCard(); });
+document.getElementById("cardClose").addEventListener("click", () => cardModal.classList.remove("show"));
+cardModal.addEventListener("click", e => { if (e.target === cardModal) cardModal.classList.remove("show"); });
+
+/* ================================================================
+   录音（MediaRecorder 捕获总线，纯本地下载）
+   ================================================================ */
+let recorder = null, recChunks = [], recDest = null;
+document.getElementById("btnRec").addEventListener("click", () => {
+  if (!S.started || !AC) return;
+  const btn = document.getElementById("btnRec");
+  const dot = document.getElementById("recDot");
+  if (recorder && recorder.state === "recording") { recorder.stop(); return; }
+  try {
+    if (!recDest) { recDest = AC.createMediaStreamDestination(); master.connect(recDest); }
+    const mime = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", ""]
+      .find(m => !m || MediaRecorder.isTypeSupported(m));
+    recorder = new MediaRecorder(recDest.stream, mime ? { mimeType: mime } : undefined);
+    recChunks = [];
+    recorder.ondataavailable = e => { if (e.data.size) recChunks.push(e.data); };
+    recorder.onstop = () => {
+      const blob = new Blob(recChunks, { type: recorder.mimeType || "audio/webm" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const ext = (recorder.mimeType || "").includes("mp4") ? "m4a" : "webm";
+      a.href = url;
+      a.download = (S.recName || "雨窗即兴") + "." + ext;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+      btn.classList.remove("on"); btn.textContent = "录制循环";
+      dot.classList.remove("show");
+      toast("录完一圈 · 音频开始下载 ♪");
+    };
+    recorder.start();
+    btn.classList.add("on"); btn.textContent = "停止录制";
+    dot.classList.add("show");
+    /* 自动录一整圈后停止 */
+    const loopMs = S.totalBeats * secPerBeat() * 1000 + 800;
+    setTimeout(() => { if (recorder && recorder.state === "recording") recorder.stop(); }, loopMs);
+  } catch (err) {
+    toast("此浏览器不支持录音：" + err.message);
+  }
+});
+
+/* ================================================================
+   控制条
+   ================================================================ */
+const chipProg = document.getElementById("chipProg");
+function buildChips() {
+  chipProg.innerHTML = "";
+  PROGRESSIONS.forEach((p, i) => {
+    const b = document.createElement("button");
+    b.className = "btn" + (i === S.progIndex ? " sel" : "");
+    b.textContent = p.name;
+    b.onclick = () => {
+      S.progIndex = i;
+      [...chipProg.children].forEach((c, j) => c.classList.toggle("sel", j === i));
+      buildLanes();
+      toast("和弦进行 → " + p.name);
+      saveLocalSoon();
+    };
+    chipProg.appendChild(b);
+  });
+}
+document.getElementById("btnRain").addEventListener("click", function () {
+  if (!S.started) return;
+  setRain(!S.rainOn);
+  this.classList.toggle("on", S.rainOn);
+  makeDrops();
+  saveLocalSoon();
+});
+document.getElementById("btnDrums").addEventListener("click", function () {
+  if (!S.started) return;
+  S.drumsOn = !S.drumsOn;
+  this.classList.toggle("on", S.drumsOn);
+  saveLocalSoon();
+});
+const bpmSlider = document.getElementById("bpmSlider");
+bpmSlider.addEventListener("input", () => {
+  S.bpm = +bpmSlider.value;
+  document.getElementById("bpmVal").textContent = S.bpm;
+  /* 相位连续地重排网格 */
+  if (AC && schedTimer) {
+    const cur = currentPlayingStep();
+    rebuildGrid(cur, Math.max(AC.currentTime, stepTimes[cur]));
+  }
+  saveLocalSoon();
+});
+const volSlider = document.getElementById("volSlider");
+volSlider.addEventListener("input", () => {
+  S.volume = volSlider.value / 100;
+  document.getElementById("volVal").textContent = volSlider.value;
+  if (master) master.gain.setTargetAtTime(S.volume, AC.currentTime, 0.05);
+  saveLocalSoon();
+});
+document.getElementById("btnClear").addEventListener("click", () => {
+  S.notes = []; holds = []; S.nextId = 1; S.recName = null;
+  saveLocal();
+  toast("已清空 · 窗还是那扇窗，曲子是新的");
+});
+
+/* ---- Toast ---- */
+const toastEl = document.getElementById("toast");
+let toastTimer = null;
+function toast(msg) {
+  toastEl.textContent = msg;
+  toastEl.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove("show"), 2400);
+}
+
+/* ================================================================
+   开场：推开这扇窗（首次交互创建/resume AudioContext）
+   ================================================================ */
+const hadSave = loadLocal();
+document.getElementById("openBtn").addEventListener("click", () => {
+  initAudio();
+  if (AC.state === "suspended") AC.resume();
+  S.started = true;
+
+  /* 恢复 UI */
+  bpmSlider.value = S.bpm; document.getElementById("bpmVal").textContent = S.bpm;
+  volSlider.value = Math.round(S.volume * 100);
+  document.getElementById("volVal").textContent = Math.round(S.volume * 100);
+  document.getElementById("btnRain").classList.toggle("on", S.rainOn);
+  document.getElementById("btnDrums").classList.toggle("on", S.drumsOn);
+  buildChips(); buildLanes();
+
+  startAmbience();
+  startScheduler();
+
+  /* 存档音符 → 重建光点 */
+  holds = [];
+  S.notes.forEach(n => spawnHold(0, 0, n.step, n.midi, n.id));
+  layoutHolds();
+
+  document.getElementById("veil").classList.add("hidden");
+  document.getElementById("titleBar").classList.add("show");
+  document.getElementById("chordLane").classList.add("show");
+  document.getElementById("controls").classList.add("show");
+
+  toast(hadSave && S.notes.length
+    ? "欢迎回来 · 你的 " + S.notes.length + " 颗音符还在循环里"
+    : "随便点 · 怎么弹都好听");
+});
+
+/* ---- 启动视觉 ---- */
+resize();
+makeBlobs();
+makeDrops();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
